@@ -87,6 +87,44 @@ async function vectorizeWithRecraft(buf, mime) {
   return Buffer.from(await r2.arrayBuffer());
 }
 
+// ทำให้ภาพคมชัดด้วย Recraft Crisp Upscale (เส้นทางตามผลค้นหา ยังไม่ได้ยืนยันจากเอกสารทางการ)
+async function crispUpscaleWithRecraft(buf, mime) {
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: mime }), 'input.png');
+  const res = await fetch('https://external.api.recraft.ai/v1/images/crispUpscale', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${RECRAFT_KEY}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.error || `Recraft ตอบกลับ ${res.status}`);
+  }
+  const ct = res.headers.get('content-type') || '';
+  if (ct.startsWith('image/')) return { type: ct, buf: Buffer.from(await res.arrayBuffer()) };
+  const j = await res.json();
+  const url = (j.image && j.image.url) || j.url || (j.data && j.data[0] && j.data[0].url);
+  if (!url) throw new Error('Recraft ไม่ได้ส่งรูปกลับมา');
+  const r2 = await fetch(url);
+  return { type: r2.headers.get('content-type') || 'image/png', buf: Buffer.from(await r2.arrayBuffer()) };
+}
+
+async function handleUpscale(req, res) {
+  if (!RECRAFT_KEY) return send(res, 503, { error: 'ยังไม่ได้ตั้งค่า RECRAFT_API_KEY บนเซิร์ฟเวอร์', configured: false });
+  if (req.method !== 'POST') return send(res, 405, { error: 'ใช้ POST เท่านั้น' });
+  let buf;
+  try { buf = await readBody(req); }
+  catch { return send(res, 413, { error: 'ไฟล์ใหญ่เกินไป' }); }
+  const mime = (req.headers['content-type'] || 'image/png').split(';')[0];
+  if (!/^image\//.test(mime)) return send(res, 400, { error: 'ต้องส่งเป็นไฟล์รูปภาพ' });
+  try {
+    const out = await crispUpscaleWithRecraft(buf, mime);
+    send(res, 200, out.buf, out.type);
+  } catch (e) {
+    send(res, 502, { error: e.message });
+  }
+}
+
 async function handleEdit(req, res) {
   if (!GEMINI_KEY) return send(res, 503, { error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY บนเซิร์ฟเวอร์', configured: false });
   if (req.method !== 'POST') return send(res, 405, { error: 'ใช้ POST เท่านั้น' });
@@ -129,6 +167,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/ai/vectorize') {
     return handleVectorize(req, res);
+  }
+  if (url.pathname === '/api/ai/upscale') {
+    return handleUpscale(req, res);
   }
   if (url.pathname === '/' || url.pathname === '/index.html') {
     return fs.readFile(INDEX, (err, data) => {
