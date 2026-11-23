@@ -259,11 +259,12 @@
     <div class="pill">ประมวลผลในเบราว์เซอร์ · <b>ไม่อัปโหลดภาพ</b></div>
   </header>
 
-  <div class="seg" style="max-width:680px;margin:0 auto 20px">
+  <div class="seg" style="max-width:820px;margin:0 auto 20px">
     <button data-view="up" class="on" type="button">ขยายภาพ</button>
     <button data-view="fu" type="button">ป้ายงานศพ</button>
     <button data-view="vec" type="button">แปลงเวกเตอร์</button>
     <button data-view="bg" type="button">ตัดพื้นหลัง</button>
+    <button data-view="quote" type="button">คิดราคา</button>
   </div>
   <div id="steps" class="steps" aria-label="ขั้นตอนการใช้งาน">
     <div class="step"><span>1</span>ใส่ภาพ</div>
@@ -558,6 +559,43 @@
       <label class="lab">ความต่างของสีที่ตัดออก <span id="bgTolV">40</span><input id="bgTol" type="range" min="0" max="120" value="40"></label>
       <button id="bgDl" class="btn" type="button">ดาวน์โหลด PNG โปร่งใส</button>
       <p class="fine">ระบบดูสีพื้นจากมุมภาพแล้วลบสีที่ใกล้เคียง ถ้าพื้นหลังมีลวดลายหรือไล่สี ผลอาจไม่สมบูรณ์ การตัดแบบ AI ต้องตั้งค่า key ก่อน</p>
+    </aside>
+  </section>
+  <section id="viewQuote" class="grid" hidden>
+    <div class="stack">
+      <div class="card">
+        <h2 style="margin:0 0 6px">ใบเสนอราคาป้าย</h2>
+        <p class="fine" style="text-align:left">ราคาตั้งต้นเป็นตัวอย่าง แก้เป็นราคาของร้านคุณได้ทุกช่อง</p>
+        <div class="xrow" style="margin-top:12px">
+          <label class="lab">ประเภทงาน
+            <select id="qType" style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;color:var(--text);font:inherit">
+              <option value="vinyl">ไวนิล</option>
+              <option value="sticker">สติกเกอร์</option>
+              <option value="acrylic">อะคริลิค</option>
+              <option value="composite">อะลูมิเนียมคอมโพสิต</option>
+              <option value="canvas">ผ้าใบ</option>
+            </select>
+          </label>
+          <label class="lab">ราคาต่อตารางเมตร (บาท)<input id="qRate" type="number" min="0" step="1" value="35"></label>
+        </div>
+        <div class="xrow">
+          <label class="lab">กว้าง (ซม.)<input id="qW" type="number" min="1" value="120"></label>
+          <label class="lab">สูง (ซม.)<input id="qH" type="number" min="1" value="60"></label>
+        </div>
+        <div class="xrow">
+          <label class="lab">จำนวน (ชิ้น)<input id="qQty" type="number" min="1" value="1"></label>
+          <label class="lab">ราคาขั้นต่ำต่อชิ้น (บาท)<input id="qMin" type="number" min="0" value="100"></label>
+        </div>
+        <div class="xrow">
+          <label class="lab">ส่วนลด (%)<input id="qDisc" type="number" min="0" max="100" value="0"></label>
+          <label class="check" style="margin-top:28px"><input id="qVat" type="checkbox"> คิดภาษีมูลค่าเพิ่ม 7%</label>
+        </div>
+      </div>
+    </div>
+    <aside class="card side">
+      <h2>สรุปราคา</h2>
+      <div id="qOut" class="stats" style="grid-template-columns:1fr"></div>
+      <button id="qCopy" class="btn ghost" type="button">คัดลอกข้อความใบเสนอราคา</button>
     </aside>
   </section>
 </div>
@@ -1607,7 +1645,7 @@
     } catch (e) { toast('ส่งออกไม่สำเร็จ: ' + e.message); }
   });
 
-  const VIEWS = { up: '#viewUp', fu: '#viewFu', vec: '#viewVec', bg: '#viewBg' };
+  const VIEWS = { up: '#viewUp', fu: '#viewFu', vec: '#viewVec', bg: '#viewBg', quote: '#viewQuote' };
   $$('[data-view]').forEach(b => b.addEventListener('click', () => {
     $$('[data-view]').forEach(x => x.classList.toggle('on', x === b));
     Object.entries(VIEWS).forEach(([k, sel]) => { $(sel).hidden = k !== b.dataset.view; });
@@ -1615,6 +1653,7 @@
     if (b.dataset.view === 'fu') fuRender();
     if (b.dataset.view === 'vec') vecRun();
     if (b.dataset.view === 'bg') bgRun();
+    if (b.dataset.view === 'quote') renderQuote();
   }));
 
   /* ---------- หน้าแปลงเวกเตอร์ ---------- */
@@ -1776,6 +1815,41 @@
   $('#fPng').addEventListener('click', () => fuExport('png').catch(e => toast('ส่งออกไม่สำเร็จ: ' + e.message)));
   $('#fAi').addEventListener('click', () => fuExport('ai').catch(e => toast('ส่งออกไม่สำเร็จ: ' + e.message)));
   if (document.fonts) document.fonts.load(`700 40px ${FONT}`).then(() => { if (!$('#viewFu').hidden) fuRender(); }).catch(() => {});
+
+  /* ---------- เครื่องคิดราคาป้าย ---------- */
+  const QUOTE_DEFAULT = { vinyl: 35, sticker: 60, acrylic: 450, composite: 380, canvas: 45 };
+  const QUOTE_NAME = { vinyl: 'ไวนิล', sticker: 'สติกเกอร์', acrylic: 'อะคริลิค', composite: 'อะลูมิเนียมคอมโพสิต', canvas: 'ผ้าใบ' };
+  const money = n => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
+  function quoteText() {
+    const t = $('#qType').value, w = +$('#qW').value || 0, h = +$('#qH').value || 0;
+    const qty = Math.max(1, Math.floor(+$('#qQty').value || 1));
+    const rate = Math.max(0, +$('#qRate').value || 0), minFee = Math.max(0, +$('#qMin').value || 0);
+    const disc = Math.min(100, Math.max(0, +$('#qDisc').value || 0));
+    const area = w * h / 10000;
+    const perPiece = Math.max(area * rate, minFee);
+    const subtotal = perPiece * qty;
+    const afterDisc = subtotal * (1 - disc / 100);
+    const vat = $('#qVat').checked ? afterDisc * 0.07 : 0;
+    const total = afterDisc + vat;
+    return { t, w, h, qty, rate, area, perPiece, subtotal, disc, discAmt: subtotal - afterDisc, vat, total };
+  }
+  function renderQuote() {
+    const q = quoteText();
+    $('#qOut').innerHTML = `
+      <div class="stat"><small>งาน</small><b>${QUOTE_NAME[q.t]} · ${q.w} × ${q.h} ซม.</b><span>พื้นที่ ${q.area.toFixed(2)} ตร.ม. · ${q.qty} ชิ้น</span></div>
+      <div class="stat"><small>ราคาต่อชิ้น</small><b>${money(q.perPiece)}</b><span>อัตรา ${money(q.rate)}/ตร.ม. (ขั้นต่ำ ${money(+$('#qMin').value || 0)})</span></div>
+      <div class="stat"><small>ยอดรวม</small><b>${money(q.subtotal)}</b><span>ส่วนลด ${q.disc}% (${money(q.discAmt)}) · ภาษี ${money(q.vat)}</span></div>
+      <div class="stat" style="border-color:var(--accent)"><small>ราคาสุทธิ</small><b style="font-size:20px;color:var(--accent)">${money(q.total)}</b></div>`;
+  }
+  $('#qType').addEventListener('change', e => { $('#qRate').value = QUOTE_DEFAULT[e.target.value]; renderQuote(); });
+  ['qRate', 'qW', 'qH', 'qQty', 'qMin', 'qDisc'].forEach(id => $('#' + id).addEventListener('input', renderQuote));
+  $('#qVat').addEventListener('change', renderQuote);
+  $('#qCopy').addEventListener('click', async () => {
+    const q = quoteText();
+    const txt = `ใบเสนอราคา ${QUOTE_NAME[q.t]} ขนาด ${q.w} x ${q.h} ซม. จำนวน ${q.qty} ชิ้น\nราคาต่อชิ้น ${money(q.perPiece)}\nยอดรวม ${money(q.subtotal)}\nส่วนลด ${q.disc}% ภาษี ${money(q.vat)}\nราคาสุทธิ ${money(q.total)}`;
+    try { await navigator.clipboard.writeText(txt); toast('คัดลอกใบเสนอราคาแล้ว'); }
+    catch (e) { toast('คัดลอกไม่ได้ ลองเลือกข้อความด้วยตนเอง'); }
+  });
 
   /* ---------- สั่งแก้ภาพด้วยข้อความ (ต้องตั้งค่า AI บนเซิร์ฟเวอร์ก่อน) ---------- */
   async function aiEdit() {
